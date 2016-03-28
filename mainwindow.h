@@ -24,9 +24,14 @@ public slots:
 	void onAdd();
 	void onMove();
 
+protected:
+	virtual void closeEvent(QCloseEvent *);
+	virtual void showEvent(QShowEvent *);
+
 private:
 	Ui::MainWindow *ui;
 	PicStorage* storage;
+	QString mLastPath;
 };
 
 #endif // MAINWINDOW_H

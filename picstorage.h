@@ -21,21 +21,34 @@ class PicStorage: public QObject
 public:
 	PicStorage();
 
+	QString location() const;
+
 public slots:
-	void load(QString path);
 	void setStorage(QString path);
+
+	void load(QString path);
 	void import(QString path);
 
 	void addFile(QString filename);
 	void importFile(QString filename);
+
+	void loadStorage(QString filename = QString());
+	void saveStorage(QString filename = QString());
+
+	int size() const;
+	PicInfo *info(int index) const;
+
 signals:
 	void message(QString msg);
+	void progressStart(int size, QString msg);
+	void progressEnd();
+	void progress(int p);
+
 private:
 	PicInfo* makeFromFile(QString fullpath);
+	QStringList scanDir(QString path);
 	QMap<QString, PicInfo*> mStorage;
 	QString mLocation;
 };
-
-
 
 #endif // PICSTORAGE_H

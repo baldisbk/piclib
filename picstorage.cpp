@@ -4,6 +4,10 @@
 #include <QProcess>
 #include <QCryptographicHash>
 #include <QCoreApplication>
+
+#include <QXmlStreamReader>
+#include <QXmlStreamWriter>
+
 #include <QDebug>
 
 PicStorage::PicStorage()
@@ -12,13 +16,14 @@ PicStorage::PicStorage()
 
 void PicStorage::load(QString path)
 {
-	QDir dir(path);
-	QStringList filters;
-	filters << "*.jpg" << "*.jpeg" << "*.png";
-	QStringList files = dir.entryList(filters, QDir::Files);
-	QStringList dirs = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-	foreach (QString fn, files) addFile(path + "/" + fn);
-	foreach (QString d, dirs) load(path + "/" + d);
+	QStringList files = scanDir(path);
+	emit progressStart(files.size(), tr("Loading files..."));
+	int i = 0;
+	foreach (QString fn, files) {
+		addFile(fn);
+		emit progress(++i);
+	}
+	emit progressEnd();
 }
 
 void PicStorage::setStorage(QString path)
@@ -30,13 +35,14 @@ void PicStorage::setStorage(QString path)
 
 void PicStorage::import(QString path)
 {
-	QDir dir(path);
-	QStringList filters;
-	filters << "*.jpg" << "*.jpeg" << "*.png";
-	QStringList files = dir.entryList(filters, QDir::Files);
-	QStringList dirs = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-	foreach (QString fn, files) importFile(path + "/" + fn);
-	foreach (QString d, dirs) import(path + "/" + d);
+	QStringList files = scanDir(path);
+	emit progressStart(files.size(), tr("Importing files..."));
+	int i = 0;
+	foreach (QString fn, files) {
+		importFile(fn);
+		emit progress(++i);
+	}
+	emit progressEnd();
 }
 
 void PicStorage::addFile(QString filename)
@@ -50,12 +56,112 @@ void PicStorage::importFile(QString filename)
 {
 	PicInfo* pi = makeFromFile(filename);
 	if (!pi) return;
+	if (mStorage.contains(pi->sha1)) {
+		delete pi;
+		return;
+	}
 	pi->filepath = QString("%1/%2/%3/").
 			arg(mLocation).
 			arg(pi->camera).
 			arg(pi->datetime.toString("yyyy-MM-dd"));
 	QFile::rename(filename, pi->filepath+pi->filename);
 	mStorage.insert(pi->sha1, pi);
+}
+
+void PicStorage::loadStorage(QString filename)
+{
+	if (filename.isEmpty())
+		filename = mLocation + "/" + ".storage";
+	QFile file(filename);
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+		emit message(tr("Failed to open storage"));
+		return;
+	}
+
+	mStorage.clear();
+
+	QXmlStreamReader reader(&file);
+	while (!reader.atEnd()) {
+		switch (reader.readNext()) {
+		case QXmlStreamReader::StartElement: {
+			if (reader.name().toString() == "file") {
+				PicInfo* pi = new PicInfo;
+				pi->camera = reader.attributes().value("camera").toString();
+				pi->datetime = QDateTime::fromString(
+					reader.attributes().value("datetime").toString());
+				pi->filename = reader.attributes().value("file").toString();
+				pi->filepath = reader.attributes().value("path").toString();
+				pi->sha1 = reader.attributes().value("sha").toString();
+				QString fullname = pi->filepath + "/" + pi->filename;
+				QFileInfo fi(fullname);
+				if (fi.exists()) {
+					mStorage.insert(pi->sha1, pi);
+				} else {
+					emit message(QString("File %1 doesn't exist").arg(fullname));
+					delete pi;
+				}
+			} else if (reader.name().toString() == "root") {
+				QString root = reader.attributes().value("path").toString();
+				if (!root.isEmpty())
+					setStorage(root);
+			}
+		}
+		default:;
+		}
+	}
+	switch (reader.error()) {
+	case QXmlStreamReader::NoError:
+		emit message(tr("No error has occurred."));
+		break;
+	case QXmlStreamReader::NotWellFormedError:
+		emit message(tr("The parser internally raised an error due to the read XML not being well-formed."));
+		break;
+	case QXmlStreamReader::PrematureEndOfDocumentError:
+		emit message(tr("The input stream ended before a well-formed XML document was parsed."));
+		break;
+	case QXmlStreamReader::UnexpectedElementError:
+		emit message(tr("The parser encountered an element that was different to those it expected."));
+		break;
+	default:;
+	}
+}
+
+void PicStorage::saveStorage(QString filename)
+{
+	if (filename.isEmpty())
+		filename = mLocation + "/" + ".storage";
+	QFile file(filename);
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+		emit message(tr("Failed to open storage"));
+		return;
+	}
+
+	QXmlStreamWriter stream(&file);
+	stream.setAutoFormatting(true);
+	stream.writeStartDocument();
+	stream.writeStartElement("file");
+	stream.writeAttribute("path", mLocation);
+	stream.writeEndElement();
+	foreach(PicInfo* pi, mStorage) {
+		stream.writeStartElement("file");
+		stream.writeAttribute("camera", pi->camera);
+		stream.writeAttribute("datetime", pi->datetime.toString());
+		stream.writeAttribute("file", pi->filename);
+		stream.writeAttribute("path", pi->filepath);
+		stream.writeAttribute("sha", pi->sha1);
+		stream.writeEndElement();
+	}
+	stream.writeEndDocument();
+}
+
+int PicStorage::size() const
+{
+	return mStorage.size();
+}
+
+PicInfo *PicStorage::info(int index) const
+{
+	return mStorage.values().at(index);
 }
 
 PicInfo *PicStorage::makeFromFile(QString fullpath)
@@ -100,6 +206,24 @@ PicInfo *PicStorage::makeFromFile(QString fullpath)
 	emit message(pi->toString());
 
 	return pi;
+}
+
+QStringList PicStorage::scanDir(QString path)
+{
+	QDir dir(path);
+	QStringList filters;
+	filters << "*.jpg" << "*.jpeg" << "*.png";
+	QStringList res;
+	QStringList files = dir.entryList(filters, QDir::Files);
+	QStringList dirs = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+	foreach (QString fn, files) res += path + "/" + fn;
+	foreach (QString d, dirs) res += scanDir(path + "/" + d);
+	return res;
+}
+
+QString PicStorage::location() const
+{
+	return mLocation;
 }
 
 QString PicInfo::toString() const
