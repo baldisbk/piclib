@@ -11,6 +11,7 @@ struct PicInfo {
 	QString sha1;
 	QDateTime datetime;
 	QString camera;
+	QString fullname() const {return filepath + "/" + filename;}
 
 	QString toString() const;
 };

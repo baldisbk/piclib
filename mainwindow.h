@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QProgressDialog>
 
 #include "picstorage.h"
 
@@ -24,6 +25,9 @@ public slots:
 	void onAdd();
 	void onMove();
 
+	void showProgress(int size, QString msg);
+	void progress(int p);
+
 protected:
 	virtual void closeEvent(QCloseEvent *);
 	virtual void showEvent(QShowEvent *);
@@ -32,6 +36,7 @@ private:
 	Ui::MainWindow *ui;
 	PicStorage* storage;
 	QString mLastPath;
+	QProgressDialog *mProgress;
 };
 
 #endif // MAINWINDOW_H

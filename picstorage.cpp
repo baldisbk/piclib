@@ -29,8 +29,11 @@ void PicStorage::load(QString path)
 void PicStorage::setStorage(QString path)
 {
 	QFileInfo fi(path);
-	if (fi.exists())
+	if (fi.exists()) {
 		mLocation = fi.absoluteFilePath();
+		emit message(QString("Storage set to %1").arg(mLocation));
+	} else
+		emit message(QString("Path %1 doesn't exist").arg(path));
 }
 
 void PicStorage::import(QString path)
@@ -49,7 +52,11 @@ void PicStorage::addFile(QString filename)
 {
 	PicInfo* pi = makeFromFile(filename);
 	if (!pi) return;
+	if (mStorage.contains(pi->sha1)) {
+		emit message(QString("File %1 already added").arg(pi->fullname()));
+	}
 	mStorage.insert(pi->sha1, pi);
+	emit message(QString("File %1 added").arg(pi->fullname()));
 }
 
 void PicStorage::importFile(QString filename)
@@ -57,6 +64,7 @@ void PicStorage::importFile(QString filename)
 	PicInfo* pi = makeFromFile(filename);
 	if (!pi) return;
 	if (mStorage.contains(pi->sha1)) {
+		emit message(QString("File %1 already added").arg(pi->fullname()));
 		delete pi;
 		return;
 	}
@@ -64,7 +72,9 @@ void PicStorage::importFile(QString filename)
 			arg(mLocation).
 			arg(pi->camera).
 			arg(pi->datetime.toString("yyyy-MM-dd"));
-	QFile::rename(filename, pi->filepath+pi->filename);
+	QDir().mkpath(pi->filepath);
+	QFile::rename(filename, pi->fullname());
+	emit message(QString("File %1 imported and moved to %2").arg(filename).arg(pi->fullname()));
 	mStorage.insert(pi->sha1, pi);
 }
 
@@ -88,11 +98,12 @@ void PicStorage::loadStorage(QString filename)
 				PicInfo* pi = new PicInfo;
 				pi->camera = reader.attributes().value("camera").toString();
 				pi->datetime = QDateTime::fromString(
-					reader.attributes().value("datetime").toString());
+					reader.attributes().value("datetime").toString(),
+					"yyyy:MM:dd HH:mm:ss");
 				pi->filename = reader.attributes().value("file").toString();
 				pi->filepath = reader.attributes().value("path").toString();
 				pi->sha1 = reader.attributes().value("sha").toString();
-				QString fullname = pi->filepath + "/" + pi->filename;
+				QString fullname = pi->fullname();
 				QFileInfo fi(fullname);
 				if (fi.exists()) {
 					mStorage.insert(pi->sha1, pi);
@@ -139,18 +150,20 @@ void PicStorage::saveStorage(QString filename)
 	QXmlStreamWriter stream(&file);
 	stream.setAutoFormatting(true);
 	stream.writeStartDocument();
+	stream.writeStartElement("storage");
 	stream.writeStartElement("file");
 	stream.writeAttribute("path", mLocation);
 	stream.writeEndElement();
 	foreach(PicInfo* pi, mStorage) {
 		stream.writeStartElement("file");
 		stream.writeAttribute("camera", pi->camera);
-		stream.writeAttribute("datetime", pi->datetime.toString());
+		stream.writeAttribute("datetime", pi->datetime.toString("yyyy:MM:dd HH:mm:ss"));
 		stream.writeAttribute("file", pi->filename);
 		stream.writeAttribute("path", pi->filepath);
 		stream.writeAttribute("sha", pi->sha1);
 		stream.writeEndElement();
 	}
+	stream.writeEndElement();
 	stream.writeEndDocument();
 }
 
@@ -182,6 +195,13 @@ PicInfo *PicStorage::makeFromFile(QString fullpath)
 	}
 
 	QByteArray res = prc.readAll();
+	int i = 0;
+	while (i < res.size()) {
+		if (int(res.at(i)) == 0)
+			res.remove(i, 1);
+		else
+			++i;
+	}
 	QByteArray sha = QCryptographicHash::hash(res, QCryptographicHash::Sha1);
 	pi->sha1 = QString::fromLatin1(sha.toBase64());
 	QStringList lines = QString::fromLocal8Bit(res).split('\n');
@@ -193,17 +213,17 @@ PicInfo *PicStorage::makeFromFile(QString fullpath)
 		QString name = fields.takeFirst();
 		QString type = fields.takeFirst();
 		QString size = fields.takeFirst();
-		QString value = fields.join(" ");
+		QString value = fields.join(" ").trimmed();
 		if (name == "Exif.Photo.DateTimeOriginal") {
-			pi->datetime = QDateTime::fromString(value, "yyyy:MM:dd HH:mm:ss ");
+			pi->datetime = QDateTime::fromString(value, "yyyy:MM:dd HH:mm:ss");
 		}
-		if (name == "Exif.Image.Model")
+		if (name == "Exif.Image.Model") {
 			pi->camera = pi->camera + (pi->camera.isEmpty()?"":" ") + value;
-		if (name == "Exif.Image.Make")
+		}
+		if (name == "Exif.Image.Make") {
 			pi->camera = value + (pi->camera.isEmpty()?"":" ") + pi->camera;
+		}
 	}
-	QCoreApplication::processEvents();
-	emit message(pi->toString());
 
 	return pi;
 }

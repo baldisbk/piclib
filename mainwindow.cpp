@@ -5,18 +5,28 @@
 #include <QSettings>
 #include <QStandardPaths>
 
+#include <QDebug>
+
 MainWindow::MainWindow(QWidget *parent) :
 	QMainWindow(parent),
 	ui(new Ui::MainWindow)
 {
 	ui->setupUi(this);
 	storage = new PicStorage;
+	mProgress = new QProgressDialog(this);
+	mProgress->setWindowModality(Qt::WindowModal);
+	mProgress->setMinimumDuration(1000);
+
 	connect(storage, SIGNAL(message(QString)), ui->plainTextEdit, SLOT(appendPlainText(QString)));
 	connect(ui->actionImport, SIGNAL(triggered(bool)), this, SLOT(onImport()));
 	connect(ui->actionLoad, SIGNAL(triggered(bool)), this, SLOT(onLoad()));
+	connect(ui->actionSetStorage, SIGNAL(triggered(bool)), this, SLOT(onSetRoot()));
 //	connect(ui->actionImport, SIGNAL(triggered(bool)), this, SLOT(onImport()));
 //	connect(ui->actionImport, SIGNAL(triggered(bool)), this, SLOT(onImport()));
-//	connect(ui->actionImport, SIGNAL(triggered(bool)), this, SLOT(onImport()));
+
+	connect(storage, SIGNAL(progressStart(int,QString)), this, SLOT(showProgress(int,QString)));
+	connect(storage, SIGNAL(progress(int)), this, SLOT(progress(int)));
+	connect(storage, SIGNAL(progressEnd()), mProgress, SLOT(reset()));
 }
 
 MainWindow::~MainWindow()
@@ -58,6 +68,18 @@ void MainWindow::onMove()
 	QString dn = QFileDialog::getOpenFileName(this, "ImportFile");
 	if (!dn.isEmpty())
 		storage->importFile(dn);
+}
+
+void MainWindow::showProgress(int size, QString msg)
+{
+	mProgress->setLabelText(msg);
+	mProgress->setRange(0, size);
+	mProgress->setValue(0);
+}
+
+void MainWindow::progress(int p)
+{
+	mProgress->setValue(p);
 }
 
 void MainWindow::closeEvent(QCloseEvent *)
