@@ -47,7 +47,8 @@ signals:
 
 private:
 	PicInfo* makeFromFile(QString fullpath);
-	QStringList scanDir(QString path);
+	QStringList scanDir(QString path, QStringList *subPaths = 0);
+
 	QMap<QString, PicInfo*> mStorage;
 	QString mLocation;
 };

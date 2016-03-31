@@ -38,13 +38,17 @@ void PicStorage::setStorage(QString path)
 
 void PicStorage::import(QString path)
 {
-	QStringList files = scanDir(path);
+	QStringList dirs;
+	QStringList files = scanDir(path, &dirs);
 	emit progressStart(files.size(), tr("Importing files..."));
 	int i = 0;
 	foreach (QString fn, files) {
 		importFile(fn);
 		emit progress(++i);
 	}
+	foreach(QString dir, dirs)
+		QDir().rmdir(dir);
+
 	emit progressEnd();
 }
 
@@ -228,7 +232,7 @@ PicInfo *PicStorage::makeFromFile(QString fullpath)
 	return pi;
 }
 
-QStringList PicStorage::scanDir(QString path)
+QStringList PicStorage::scanDir(QString path, QStringList *subPaths)
 {
 	QDir dir(path);
 	QStringList filters;
@@ -237,7 +241,9 @@ QStringList PicStorage::scanDir(QString path)
 	QStringList files = dir.entryList(filters, QDir::Files);
 	QStringList dirs = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
 	foreach (QString fn, files) res += path + "/" + fn;
-	foreach (QString d, dirs) res += scanDir(path + "/" + d);
+	foreach (QString d, dirs) res += scanDir(path + "/" + d, subPaths);
+	if (subPaths && files.size() == dir.entryList(QDir::Files).size())
+		subPaths->append(path);
 	return res;
 }
 
